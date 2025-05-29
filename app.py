@@ -134,7 +134,7 @@ else:
         )
 
 # --- Render ---
-st.title("🌍 Multi-Hazard Risk Dashboard")
+st.title(" Multi-Hazard Risk Dashboard")
 st.plotly_chart(fig, use_container_width=True)
 
 # --- Optional Table ---
