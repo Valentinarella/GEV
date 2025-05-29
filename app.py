@@ -150,5 +150,5 @@ fig.update_layout(
 )
 
 # Display chart
-st.title("🌍 Multi-Hazard Risk Map")
+st.title("Multi-Hazard Risk Map")
 st.plotly_chart(fig, use_container_width=True)
