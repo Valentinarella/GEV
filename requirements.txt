@@ -1,7 +1,4 @@
-streamlit
+dash
 pandas
-geopandas
 folium
-streamlit-folio
-openpyxl
-supabase-py
+scikit-learn
