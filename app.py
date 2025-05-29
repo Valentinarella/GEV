@@ -1,79 +1,68 @@
-# app.py
-import dash
-from dash import dcc, html, Input, Output
-import dash_bootstrap_components as dbc
+import streamlit as st
 import plotly.express as px
 
-# Load your custom loaders
+# Load data from separate files
 from app1 import load_drought_data
 from app2 import load_wind_data
-from app3 import load_wildfire_data  # create this if wildfire is not split yet
+from app3 import load_wildfire_data
 
 # Load datasets
 drought_df = load_drought_data()
 wind_df = load_wind_data()
 wildfire_df = load_wildfire_data()
 
-# Start app
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.LUX])
-app.title = "Multi-Hazard Risk Dashboard"
+# App title
+st.set_page_config(page_title="Climate Risk Dashboard", layout="wide")
+st.title("🌍 Climate Risk Dashboard (USA)")
+st.markdown("Compare projected **Drought**, **Wind**, and **Wildfire** risks across U.S. counties.")
 
-app.layout = dbc.Container([
-    html.H2("USA Climate Risk Map", className="text-center text-primary mb-4"),
+# Tabs for each hazard
+tab1, tab2, tab3 = st.tabs(["💧 Drought", "🌪️ Wind", "🔥 Wildfire"])
 
-    dbc.Row([
-        dbc.Col(dcc.Dropdown(
-            id="hazard-selector",
-            options=[
-                {"label": "Drought Risk", "value": "drought"},
-                {"label": "Wind Risk", "value": "wind"},
-                {"label": "Wildfire Risk", "value": "wildfire"},
-            ],
-            value="drought",
-            clearable=False
-        ), width=6),
-    ], className="mb-4 justify-content-center"),
-
-    dbc.Row([
-        dbc.Col(dcc.Graph(id="hazard-map", style={"height": "600px"}), width=12)
-    ])
-], fluid=True)
-
-@app.callback(
-    Output("hazard-map", "figure"),
-    Input("hazard-selector", "value")
-)
-def update_map(hazard):
-    if hazard == "drought":
-        df = drought_df
-        risk_col = "Drought_Risk"
-        title = "Drought Risk (10-year Median)"
-    elif hazard == "wind":
-        df = wind_df
-        risk_col = "Wind_Risk"
-        title = "Wind Risk (10-year Median)"
-    else:
-        df = wildfire_df
-        risk_col = "Wildfire_Risk"
-        title = "Wildfire Risk (10-year Median)"
-
-    fig = px.scatter_mapbox(
-        df,
+# Drought Map
+with tab1:
+    st.subheader("Drought Risk (10-Year Median)")
+    fig1 = px.scatter_mapbox(
+        drought_df,
         lat="Lat",
         lon="Lon",
-        color=risk_col,
+        color="Drought_Risk",
+        hover_name="County",
+        hover_data=["State", "Low_Income_Pct"],
+        color_continuous_scale="YlGnBu",
+        zoom=3
+    )
+    fig1.update_layout(mapbox_style="carto-positron", margin={"r":0, "t":0, "l":0, "b":0})
+    st.plotly_chart(fig1, use_container_width=True)
+
+# Wind Map
+with tab2:
+    st.subheader("Wind Risk (10-Year Median)")
+    fig2 = px.scatter_mapbox(
+        wind_df,
+        lat="Lat",
+        lon="Lon",
+        color="Wind_Risk",
+        hover_name="County",
+        hover_data=["State", "Low_Income_Pct"],
+        color_continuous_scale="Viridis",
+        zoom=3
+    )
+    fig2.update_layout(mapbox_style="white-bg", margin={"r":0, "t":0, "l":0, "b":0})
+    st.plotly_chart(fig2, use_container_width=True)
+
+# Wildfire Map
+with tab3:
+    st.subheader("Wildfire Risk (10-Year Median)")
+    fig3 = px.scatter_mapbox(
+        wildfire_df,
+        lat="Lat",
+        lon="Lon",
+        color="Wildfire_Risk",
         hover_name="County",
         hover_data=["State", "Low_Income_Pct"],
         color_continuous_scale="OrRd",
         zoom=3
     )
-    fig.update_layout(
-        mapbox_style="carto-positron",
-        margin={"r":0, "t":40, "l":0, "b":0},
-        title=title
-    )
-    return fig
-
-if __name__ == "__main__":
-    app.run(debug=True)
-
+    fig3.update_layout(mapbox_style="open-street-map", margin={"r":0, "t":0, "l":0, "b":0})
+    st.plotly_chart(fig3, use_container_width=True)
