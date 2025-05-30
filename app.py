@@ -11,12 +11,15 @@ st.cache_data.clear()
 def load_data(url):
     try:
         df = pd.read_csv(url)
-        # Clean column names: strip whitespace, ensure consistency
+        # Clean column names: strip whitespace
         df.columns = df.columns.str.strip()
+        st.write("Available columns:", df.columns.tolist())  # Debug: show column names
         df["Census tract 2010 ID"] = df["Census tract 2010 ID"].astype(str)
         df["County Name"] = df["County Name"].str.title()
         df["State/Territory"] = df["State/Territory"].str.title()
+        # Check for lat/lon columns
         if "Latitude" not in df.columns or "Longitude" not in df.columns:
+            st.error("Missing 'Latitude' or 'Longitude' columns in data")
             return pd.DataFrame()
         return df.dropna(subset=["Latitude", "Longitude"])
     except Exception as e:
@@ -44,6 +47,7 @@ search = st.sidebar.text_input("County Filter").strip().lower()
 # --- Filter Logic ---
 def filter_data(df, metric):
     if df.empty or metric not in df.columns:
+        st.warning(f"Metric '{metric}' not found in data")
         return pd.DataFrame()
     value_col = metric
     filtered_df = df[df[value_col].notna()]
