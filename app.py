@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-# --- Page setup ---
+# --- Page config ---
 st.set_page_config(layout="wide")
 st.cache_data.clear()
 
@@ -12,179 +12,142 @@ drought_url = "https://undivideprojectdata.blob.core.windows.net/gev/drought_ana
 wildfire_url = "https://undivideprojectdata.blob.core.windows.net/gev/wildfire.csv?sp=r&st=2025-05-29T03:04:38Z&se=2090-05-29T11:04:38Z&spr=https&sv=2024-11-04&sr=b&sig=Vd%2FhCXRq3gQF2WmdI3wjoksdl0nPTmCWUSrYodobDyw%3D"
 census_url = "https://undivideprojectdata.blob.core.windows.net/gev/1.0-communities.csv?sp=r&st=2025-05-30T23:23:50Z&se=2090-05-31T07:23:50Z&spr=https&sv=2024-11-04&sr=b&sig=qC7ouZhUV%2BOMrZJ4tvHslvQeKUdXdA15arv%2FE2pPxEI%3D"
 
-# --- Load hazard data ---
+# --- Load functions ---
 @st.cache_data
-def load_hazard_data(url, risk_column):
-    try:
-        df = pd.read_csv(url)
-        df = df.rename(columns={
-            "CF": "County",
-            "SF": "State",
-            "MEAN_low_income_percentage": "Low_Income_Pct",
-            "Latitude": "Lat",
-            "Longitude": "Lon",
-            "midcent_median_10yr": risk_column
-        })
-        df["County"] = df["County"].str.title()
-        df["State"] = df["State"].str.title()
-        required = ["County", "State", "Lat", "Lon", risk_column]
-        return df.dropna(subset=required)
-    except Exception as e:
-        st.error(f"Failed to load hazard data: {e}")
-        return pd.DataFrame()
+def load_hazard(url, risk_column):
+    df = pd.read_csv(url)
+    df = df.rename(columns={
+        "CF": "County",
+        "SF": "State",
+        "Latitude": "Lat",
+        "Longitude": "Lon",
+        "MEAN_low_income_percentage": "Low_Income_Pct",
+        "midcent_median_10yr": risk_column
+    })
+    df["County"] = df["County"].str.title()
+    df["State"] = df["State"].str.title()
+    return df.dropna(subset=["Lat", "Lon", risk_column])
 
-# --- Load census data ---
 @st.cache_data
-def load_census_data():
-    try:
-        df = pd.read_csv(census_url)
-        df.columns = df.columns.str.strip()
-        df = df.rename(columns={
-            "County Name": "County",
-            "State/Territory": "State"
-        })
-        df["County"] = df["County"].str.title()
-        df["State"] = df["State"].str.title()
-        return df
-    except Exception as e:
-        st.error(f"Failed to load census data: {e}")
-        return pd.DataFrame()
+def load_census():
+    df = pd.read_csv(census_url)
+    df.columns = df.columns.str.strip()
+    df = df.rename(columns={
+        "County Name": "County",
+        "State/Territory": "State",
+        "Latitude": "Lat",
+        "Longitude": "Lon"
+    })
+    df["County"] = df["County"].str.title()
+    df["State"] = df["State"].str.title()
+    return df.dropna(subset=["Lat", "Lon"])
 
-# --- Load all datasets ---
-drought_df = load_hazard_data(drought_url, "Drought_Risk")
-wind_df = load_hazard_data(wind_url, "Wind_Risk")
-wildfire_df = load_hazard_data(wildfire_url, "Wildfire_Risk")
-census_df = load_census_data()
+# --- Load datasets ---
+wind_df = load_hazard(wind_url, "Wind_Risk")
+drought_df = load_hazard(drought_url, "Drought_Risk")
+wildfire_df = load_hazard(wildfire_url, "Wildfire_Risk")
+census_df = load_census()
 
-# --- Sidebar ---
-st.sidebar.title("Risk Map Controls")
-hazard = st.sidebar.radio("Select Hazard Type", ["Wind Risk", "Drought Risk", "Wildfire Risk"])
-show_heatmap = st.sidebar.checkbox("Show Heatmap", value=False)
-show_communities = st.sidebar.checkbox("Show Disadvantaged Communities", value=True)
-min_threshold = st.sidebar.slider("Minimum Risk Value", 0.0, 50.0, 5.0, 1.0)
-search = st.sidebar.text_input("Filter by County (optional)").strip().lower()
+# --- Sidebar: View toggle ---
+view = st.sidebar.radio("Choose View", ["Hazard Map", "Community Map"])
 
-# --- Select hazard data ---
-if hazard == "Wind Risk":
-    data = wind_df
-    risk_col = "Wind_Risk"
-    color = "Blues"
-elif hazard == "Drought Risk":
-    data = drought_df
-    risk_col = "Drought_Risk"
-    color = "Oranges"
-else:
-    data = wildfire_df
-    risk_col = "Wildfire_Risk"
-    color = "Reds"
+# --- Hazard View ---
+if view == "Hazard Map":
+    hazard = st.sidebar.selectbox("Hazard Type", ["Wind Risk", "Drought Risk", "Wildfire Risk"])
+    min_value = st.sidebar.slider("Minimum Risk", 0.0, 50.0, 5.0, 1.0)
+    color_by = "Low_Income_Pct"
 
-# --- Filter hazard data ---
-data = data[data[risk_col] >= min_threshold]
-if search:
-    data = data[data["County"].str.lower().str.contains(search)]
+    if hazard == "Wind Risk":
+        df = wind_df
+        risk_col = "Wind_Risk"
+        colorscale = "Blues"
+    elif hazard == "Drought Risk":
+        df = drought_df
+        risk_col = "Drought_Risk"
+        colorscale = "Oranges"
+    else:
+        df = wildfire_df
+        risk_col = "Wildfire_Risk"
+        colorscale = "Reds"
 
-# --- Limit size for performance ---
-if len(data) > 5000:
-    data = data.sample(5000, random_state=42)
+    data = df[df[risk_col] >= min_value]
 
-# --- Plotting ---
-fig = go.Figure()
-
-if data.empty:
-    st.warning("No hazard data matches the selected filters.")
-else:
-    if show_heatmap:
-        fig.add_trace(go.Densitymapbox(
-            lat=data["Lat"],
-            lon=data["Lon"],
-            z=data[risk_col],
-            radius=20,
-            colorscale=color,
+    fig = go.Figure(go.Scattergeo(
+        lon=data["Lon"],
+        lat=data["Lat"],
+        text=data["County"] + ", " + data["State"] + "<br>Risk: " + data[risk_col].astype(str),
+        marker=dict(
+            size=data[color_by] * 0.7,
+            color=data[risk_col],
+            colorscale=colorscale,
             showscale=True,
-            name=f"{hazard} Heatmap"
-        ))
-        fig.update_layout(
-            mapbox=dict(
-                accesstoken="your_mapbox_access_token_here",  # Replace with your actual token
-                style="carto-positron",
-                center={"lat": 37.0902, "lon": -95.7129},
-                zoom=3
-            ),
-            margin={"r": 0, "t": 30, "l": 0, "b": 0},
-            height=600
+            colorbar=dict(title=risk_col)
         )
+    ))
+
+    fig.update_layout(
+        geo=dict(
+            scope="usa",
+            landcolor="lightgray",
+            subunitcolor="white",
+            projection_scale=1,
+            center={"lat": 37.0902, "lon": -95.7129}
+        ),
+        height=600,
+        margin={"r": 0, "t": 30, "l": 0, "b": 0}
+    )
+
+    st.title(f"{hazard} Across U.S. Counties")
+    st.plotly_chart(fig, use_container_width=True)
+
+    if not data.empty:
+        st.subheader("Top 10 Counties by Risk")
+        st.dataframe(data.sort_values(by=risk_col, ascending=False).head(10)[["County", "State", risk_col, "Low_Income_Pct"]])
+
+# --- Community View ---
+else:
+    metric = st.sidebar.selectbox("Community Metric", [
+        "Identified as disadvantaged",
+        "Energy burden",
+        "PM2.5 in the air",
+        "Current asthma among adults aged greater than or equal to 18 years"
+    ])
+
+    community = census_df[census_df[metric].notna()]
+    if metric == "Identified as disadvantaged":
+        community = community[community[metric] == True]
+        color = "black"
     else:
-        fig.add_trace(go.Scattergeo(
-            lon=data["Lon"],
-            lat=data["Lat"],
-            text=data["County"] + ", " + data["State"] + "<br>Risk: " + data[risk_col].astype(str),
-            marker=dict(
-                size=data["Low_Income_Pct"] * 0.7,
-                color=data[risk_col],
-                colorscale=color,
-                showscale=True,
-                colorbar=dict(title=risk_col)
-            ),
-            name=hazard
-        ))
-        fig.update_layout(
-            geo=dict(
-                scope="usa",
-                landcolor="lightgray",
-                subunitcolor="white",
-                center={"lat": 37.0902, "lon": -95.7129},
-                projection_scale=1
-            ),
-            margin={"r": 0, "t": 30, "l": 0, "b": 0},
-            height=600,
-            showlegend=False
+        color = community[metric]
+
+    fig = go.Figure(go.Scattergeo(
+        lon=community["Lon"],
+        lat=community["Lat"],
+        text=community["County"] + ", " + community["State"] + "<br>" + metric + ": " + community[metric].astype(str),
+        marker=dict(
+            size=6 if metric == "Identified as disadvantaged" else 8,
+            color=color,
+            colorscale="Viridis" if metric != "Identified as disadvantaged" else None,
+            showscale=metric != "Identified as disadvantaged",
+            colorbar=dict(title=metric) if metric != "Identified as disadvantaged" else None
         )
+    ))
 
-# --- Add disadvantaged communities ---
-if show_communities and not census_df.empty:
-    disadvantaged = census_df[census_df["Identified as disadvantaged"] == True]
-    if "Latitude" in disadvantaged.columns and "Longitude" in disadvantaged.columns:
-        disadvantaged = disadvantaged.rename(columns={"Latitude": "Lat", "Longitude": "Lon"})
-    elif "Lat" not in disadvantaged.columns or "Lon" not in disadvantaged.columns:
-        st.warning("Community data does not have latitude/longitude. Map overlay skipped.")
-    else:
-        fig.add_trace(go.Scattergeo(
-            lon=disadvantaged["Lon"],
-            lat=disadvantaged["Lat"],
-            text=disadvantaged["County"] + ", " + disadvantaged["State"] + "<br>Disadvantaged Tract",
-            marker=dict(
-                size=6,
-                color="black",
-                symbol="x",
-                opacity=0.6
-            ),
-            name="Disadvantaged Communities"
-        ))
+    fig.update_layout(
+        geo=dict(
+            scope="usa",
+            landcolor="lightgray",
+            subunitcolor="white",
+            projection_scale=1,
+            center={"lat": 37.0902, "lon": -95.7129}
+        ),
+        height=600,
+        margin={"r": 0, "t": 30, "l": 0, "b": 0}
+    )
 
-# --- Show Map ---
-st.title("Multi-Hazard Risk Dashboard")
-st.plotly_chart(fig, use_container_width=True)
+    st.title("Community-Level Census Map")
+    st.plotly_chart(fig, use_container_width=True)
 
-# --- Top 10 table ---
-if not data.empty:
-    st.subheader(f"Top 10 Highest {hazard} Counties")
-    top = data.sort_values(by=risk_col, ascending=False).head(10)
-    st.dataframe(top[["County", "State", risk_col, "Low_Income_Pct"]])
-
-# --- Storytelling ---
-if not data.empty:
-    top_states = data["State"].value_counts().head(3).index.tolist()
-    top_counties = data.sort_values(by=risk_col, ascending=False).head(3)[["County", "State"]].agg(", ".join, axis=1).tolist()
-
-    st.markdown("### 📖 Story Snapshot")
-    st.markdown(f"""
-**You're viewing {hazard.lower()} risk across U.S. counties.**
-
-Highest levels of **{hazard.lower()}** are concentrated in: **{', '.join(top_states)}**.
-
-Top impacted counties include: **{', '.join(top_counties)}**.
-
-Many of these places also show high rates of **low-income households**, suggesting that climate vulnerability and social vulnerability overlap in critical ways.
-
-Use the map and data to explore where these challenges intersect.
-""")
+    st.subheader("Top Communities")
+    top = community.sort_values(by=metric, ascending=False).head(10) if metric != "Identified as disadvantaged" else community.head(10)
+    st.dataframe(top[["County", "State", metric, "Total population"]] if "Total population" in top.columns else top[["County", "State", metric]])
