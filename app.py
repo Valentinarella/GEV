@@ -117,7 +117,7 @@ else:
         showlegend=False
     )
 
-# --- Render ---
+# --- Render Map ---
 st.title(f"{fig_title} Dashboard")
 st.plotly_chart(fig, use_container_width=True)
 
@@ -130,59 +130,21 @@ if not data.empty:
         "Low_Income_Pct": "{:.2%}"
     }))
 
-# --- Chart ---
+# --- Bar Chart ---
 if not data.empty:
     top = data.sort_values(by=risk_col, ascending=False).head(10)
-    ```chartjs
-    {
-        "type": "bar",
-        "data": {
-            "labels": [
-                "${top['County'].iloc[0] + ', ' + top['State'].iloc[0]}",
-                "${top['County'].iloc[1] + ', ' + top['State'].iloc[1]}",
-                "${top['County'].iloc[2] + ', ' + top['State'].iloc[2]}",
-                "${top['County'].iloc[3] + ', ' + top['State'].iloc[3]}",
-                "${top['County'].iloc[4] + ', ' + top['State'].iloc[4]}",
-                "${top['County'].iloc[5] + ', ' + top['State'].iloc[5]}",
-                "${top['County'].iloc[6] + ', ' + top['State'].iloc[6]}",
-                "${top['County'].iloc[7] + ', ' + top['State'].iloc[7]}",
-                "${top['County'].iloc[8] + ', ' + top['State'].iloc[8]}",
-                "${top['County'].iloc[9] + ', ' + top['State'].iloc[9]}"
-            ],
-            "datasets": [{
-                "label": "${fig_title}",
-                "data": [
-                    ${top[risk_col].iloc[0]},
-                    ${top[risk_col].iloc[1]},
-                    ${top[risk_col].iloc[2]},
-                    ${top[risk_col].iloc[3]},
-                    ${top[risk_col].iloc[4]},
-                    ${top[risk_col].iloc[5]},
-                    ${top[risk_col].iloc[6]},
-                    ${top[risk_col].iloc[7]},
-                    ${top[risk_col].iloc[8]},
-                    ${top[risk_col].iloc[9]}
-                ],
-                "backgroundColor": [
-                    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-                    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
-                ],
-                "borderColor": [
-                    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-                    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
-                ],
-                "borderWidth": 1
-            }]
-        },
-        "options": {
-            "scales": {
-                "y": {
-                    "beginAtZero": true,
-                    "title": { "display": true, "text": "${fig_title}" }
-                },
-                "x": {
-                    "title": { "display": true, "text": "County, State" }
-                }
-            }
-        }
-    }
+    bar_fig = go.Figure()
+    bar_fig.add_trace(go.Bar(
+        x=top["County"] + ", " + top["State"],
+        y=top[risk_col],
+        marker_color=["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+                      "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+    ))
+    bar_fig.update_layout(
+        xaxis_title="County, State",
+        yaxis_title=fig_title,
+        yaxis=dict(range=[0, max(50.0, top[risk_col].max() * 1.1)]),
+        margin={"r":0, "t":30, "l":0, "b":0},
+        height=400
+    )
+    st.plotly_chart(bar_fig, use_container_width=True)
