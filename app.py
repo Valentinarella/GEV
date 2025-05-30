@@ -12,7 +12,6 @@ def load_data(url, label):
         df = pd.read_csv(url)
         df.columns = df.columns.str.strip()
 
-        # Normalize key fields
         for col in ["CF", "SF", "County Name", "State/Territory"]:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.title()
@@ -20,7 +19,6 @@ def load_data(url, label):
         if "Census tract 2010 ID" in df.columns:
             df["Census tract 2010 ID"] = df["Census tract 2010 ID"].astype(str)
 
-        # Detect Latitude/Longitude
         lat_col = next((c for c in df.columns if "lat" in c.lower()), None)
         lon_col = next((c for c in df.columns if "lon" in c.lower() or "lng" in c.lower()), None)
 
@@ -28,10 +26,10 @@ def load_data(url, label):
             st.warning(f"⚠️ Missing coordinates in {label}. Skipping.")
             return pd.DataFrame()
 
-        df = df.dropna(subset=[lat_col, lon_col])
         df["Latitude"] = df[lat_col]
         df["Longitude"] = df[lon_col]
 
+        df = df.dropna(subset=["Latitude", "Longitude"])
         st.write(f"✅ Loaded {label}: {df.shape[0]} rows")
         return df
 
@@ -70,11 +68,9 @@ metric_options = {
 }
 
 metric = st.sidebar.selectbox("Metric", metric_options[dataset])
-min_threshold = st.sidebar.slider("Min Value (Filter)", 0.0, 100.0, 0.0, 1.0)
-search = st.sidebar.text_input("Search (County or Community)").strip().lower()
 heatmap = st.sidebar.checkbox("Show as Heatmap", value=False)
 
-# --- Dataset Map ---
+# --- Dataset Selection ---
 df_map = {
     "Census Tracts": census_df,
     "Wind Risk": wind_df,
@@ -83,112 +79,98 @@ df_map = {
 }
 df = df_map[dataset]
 
-# --- Filtering ---
-def filter_df(df):
-    if df.empty or metric not in df.columns:
-        st.warning("❌ Metric not found in data.")
-        return pd.DataFrame()
+# --- Basic Filtering: just remove nulls from the selected metric
+if df.empty or metric not in df.columns:
+    st.warning("❌ Metric not found in data.")
+    st.stop()
 
-    result = df[df[metric].notna()]
-    if metric != "Identified as disadvantaged":
-        result = result[result[metric] >= min_threshold]
+filtered = df[df[metric].notna()]
+if filtered.empty:
+    st.warning("No data available for this metric.")
+    st.stop()
 
-    if search:
-        if dataset == "Census Tracts":
-            result = result[result["County Name"].str.lower().str.contains(search, na=False)]
-        else:
-            result = result[result["CF"].str.lower().str.contains(search, na=False)]
+# --- Map Rendering ---
+size_col = "Total population" if dataset == "Census Tracts" else "MEAN_low_income_percentage"
+loc_col = "County Name" if dataset == "Census Tracts" else "CF"
+state_col = "State/Territory" if dataset == "Census Tracts" else "SF"
 
-    return result
+fig = go.Figure()
 
-filtered = filter_df(df)
-
-# --- Plotting ---
-if not filtered.empty:
-    size_col = "Total population" if dataset == "Census Tracts" else "MEAN_low_income_percentage"
-    loc_col = "County Name" if dataset == "Census Tracts" else "CF"
-    state_col = "State/Territory" if dataset == "Census Tracts" else "SF"
-
-    fig = go.Figure()
-
-    if heatmap:
-        fig.add_trace(go.Scattergeo(
-            lon=filtered["Longitude"],
-            lat=filtered["Latitude"],
-            text=filtered[loc_col] + ", " + filtered[state_col] + "<br>" + metric + ": " + filtered[metric].astype(str),
-            marker=dict(
-                size=10,
-                color=filtered[metric],
-                colorscale="Viridis",
-                opacity=0.3,
-                showscale=True,
-                colorbar=dict(title=metric)
-            )
-        ))
-    else:
-        fig.add_trace(go.Scattergeo(
-            lon=filtered["Longitude"],
-            lat=filtered["Latitude"],
-            text=filtered[loc_col] + ", " + filtered[state_col] + "<br>" + metric + ": " + filtered[metric].astype(str),
-            marker=dict(
-                size=filtered[size_col] / (1000 if dataset == "Census Tracts" else 2),
-                color=filtered[metric],
-                colorscale="Viridis",
-                showscale=True,
-                colorbar=dict(title=metric)
-            )
-        ))
-
-    fig.update_layout(
-        geo=dict(
-            scope="usa",
-            landcolor="lightgray",
-            subunitcolor="white",
-            center={"lat": 37.0902, "lon": -95.7129},
-            projection_scale=1
-        ),
-        margin={"r": 0, "t": 30, "l": 0, "b": 0},
-        height=600,
-        showlegend=False
-    )
-
-    st.title(f"{metric} – {dataset}")
-    st.plotly_chart(fig, use_container_width=True)
-
-    # --- Top 10 Table ---
-    top10 = filtered.sort_values(by=metric, ascending=False).head(10)
-    st.subheader("Top 10 Locations")
-    st.dataframe(top10[[loc_col, state_col, metric, size_col]].style.format({
-        metric: "{:.2f}" if metric != "Identified as disadvantaged" else "{}",
-        size_col: "{:.0f}" if dataset == "Census Tracts" else "{:.2f}"
-    }))
-
-    # --- Bar Chart ---
-    st.subheader("Top 10 - Bar Chart")
-    bar_fig = go.Figure()
-    bar_fig.add_trace(go.Bar(
-        x=top10[loc_col] + ", " + top10[state_col],
-        y=top10[metric],
-        marker_color='indianred'
+if heatmap:
+    fig.add_trace(go.Scattergeo(
+        lon=filtered["Longitude"],
+        lat=filtered["Latitude"],
+        text=filtered[loc_col] + ", " + filtered[state_col] + "<br>" + metric + ": " + filtered[metric].astype(str),
+        marker=dict(
+            size=10,
+            color=filtered[metric],
+            colorscale="Viridis",
+            opacity=0.3,
+            showscale=True,
+            colorbar=dict(title=metric)
+        )
     ))
-    bar_fig.update_layout(
-        xaxis_title="Location",
-        yaxis_title=metric,
-        yaxis=dict(range=[0, 100.0 if metric != "Identified as disadvantaged" else 1.1]),
-        height=400
-    )
-    st.plotly_chart(bar_fig, use_container_width=True)
-
-    # --- Optional Summary Section ---
-    st.markdown("### Story Summary")
-    st.markdown(f"""
-    You're exploring **{metric}** under the **{dataset}** dataset.
-    {len(filtered)} locations met your filters.
-    
-    The top areas with the highest values are mostly from:  
-    **{', '.join(top10[state_col].unique()[:3])}**.
-    
-    This suggests that environmental or socioeconomic challenges here may require more attention.
-    """)
 else:
-    st.warning("No data found. Try relaxing your filters or changing the metric.")
+    fig.add_trace(go.Scattergeo(
+        lon=filtered["Longitude"],
+        lat=filtered["Latitude"],
+        text=filtered[loc_col] + ", " + filtered[state_col] + "<br>" + metric + ": " + filtered[metric].astype(str),
+        marker=dict(
+            size=filtered[size_col] / (1000 if dataset == "Census Tracts" else 2),
+            color=filtered[metric],
+            colorscale="Viridis",
+            showscale=True,
+            colorbar=dict(title=metric)
+        )
+    ))
+
+fig.update_layout(
+    geo=dict(
+        scope="usa",
+        landcolor="lightgray",
+        subunitcolor="white",
+        center={"lat": 37.0902, "lon": -95.7129},
+        projection_scale=1
+    ),
+    margin={"r": 0, "t": 30, "l": 0, "b": 0},
+    height=600,
+    showlegend=False
+)
+
+st.title(f"{metric} – {dataset}")
+st.plotly_chart(fig, use_container_width=True)
+
+# --- Top 10 Table ---
+top10 = filtered.sort_values(by=metric, ascending=False).head(10)
+st.subheader("Top 10 Locations")
+st.dataframe(top10[[loc_col, state_col, metric, size_col]].style.format({
+    metric: "{:.2f}" if metric != "Identified as disadvantaged" else "{}",
+    size_col: "{:.0f}" if dataset == "Census Tracts" else "{:.2f}"
+}))
+
+# --- Bar Chart ---
+st.subheader("Top 10 - Bar Chart")
+bar_fig = go.Figure()
+bar_fig.add_trace(go.Bar(
+    x=top10[loc_col] + ", " + top10[state_col],
+    y=top10[metric],
+    marker_color='indianred'
+))
+bar_fig.update_layout(
+    xaxis_title="Location",
+    yaxis_title=metric,
+    yaxis=dict(range=[0, 100.0 if metric != "Identified as disadvantaged" else 1.1]),
+    height=400
+)
+st.plotly_chart(bar_fig, use_container_width=True)
+
+# --- Summary Section ---
+st.markdown("### Story Summary")
+st.markdown(f"""
+You're exploring **{metric}** under the **{dataset}** dataset.
+
+All available data points are shown — no filters were applied.
+
+The top areas with the highest values are mostly from:  
+**{', '.join(top10[state_col].unique()[:3])}**.
+""")
