@@ -13,15 +13,17 @@ def load_data(url):
         df = pd.read_csv(url)
         # Clean column names: strip whitespace
         df.columns = df.columns.str.strip()
-        st.write("Available columns:", df.columns.tolist())  # Debug: show column names
+        # Debug: show all column names
+        st.write("Available columns:", df.columns.tolist())
         df["Census tract 2010 ID"] = df["Census tract 2010 ID"].astype(str)
         df["County Name"] = df["County Name"].str.title()
         df["State/Territory"] = df["State/Territory"].str.title()
-        # Check for lat/lon columns
-        if "Latitude" not in df.columns or "Longitude" not in df.columns:
-            st.error("Missing 'Latitude' or 'Longitude' columns in data")
+        # Check for lat/lon columns - adjust these names based on debug output
+        lat_col, lon_col = "Latitude", "Longitude"  # Placeholder: update after checking columns
+        if lat_col not in df.columns or lon_col not in df.columns:
+            st.error(f"Missing '{lat_col}' or '{lon_col}' columns in data")
             return pd.DataFrame()
-        return df.dropna(subset=["Latitude", "Longitude"])
+        return df.dropna(subset=[lat_col, lon_col])
     except Exception as e:
         st.error(f"Load failed: {str(e)}")
         return pd.DataFrame()
@@ -73,10 +75,11 @@ else:
         if len(data) > 5000:
             data = data.sample(5000, random_state=42)
         
+        lat_col, lon_col = "Latitude", "Longitude"  # Update these based on debug output
         if show_heatmap:
             fig.add_trace(go.Scattergeo(
-                lon=data["Longitude"],
-                lat=data["Latitude"],
+                lon=data[lon_col],
+                lat=data[lat_col],
                 text=data["Census tract 2010 ID"] + "<br>" + data["County Name"] + ", " + data["State/Territory"] + "<br>" + metric + ": " + data[metric].astype(str),
                 marker=dict(
                     size=10,
@@ -89,8 +92,8 @@ else:
             ))
         else:
             fig.add_trace(go.Scattergeo(
-                lon=data["Longitude"],
-                lat=data["Latitude"],
+                lon=data[lon_col],
+                lat=data[lat_col],
                 text=data["Census tract 2010 ID"] + "<br>" + data["County Name"] + ", " + data["State/Territory"] + "<br>" + metric + ": " + data[metric].astype(str),
                 marker=dict(
                     size=data["Total population"] / 1000,  # Scale by population
