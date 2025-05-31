@@ -41,6 +41,10 @@ def load_hazard(url, risk_col):
                                 "MEAN_low_income_percentage": "MEAN_low_income_percentage", "midcent_median_10yr": risk_col})
         df["County"] = df["County"].str.title()
         df["State"] = df["State"].str.title()
+        # Ensure risk_col is numeric
+        df[risk_col] = pd.to_numeric(df[risk_col], errors='coerce')
+        # Ensure MEAN_low_income_percentage is numeric
+        df["MEAN_low_income_percentage"] = pd.to_numeric(df["MEAN_low_income_percentage"], errors='coerce')
         return df.dropna(subset=["Lat", "Lon", risk_col])
     except Exception as e:
         st.error(f"Error loading data from {url}: {e}")
@@ -169,46 +173,56 @@ if view == "Hazard Map":
         if not filtered.empty:
             top_10 = filtered.sort_values(by=risk_col, ascending=False).head(10)
             
-            # Histogram of Risk Scores
-            hist_fig = px.histogram(
-                top_10,
-                x=risk_col,
-                nbins=10,
-                title=f"Distribution of {metric_name_map[risk_col]} for Top 10 Counties",
-                color_discrete_sequence=[colors[h]],
-                template="plotly_white"
-            )
-            hist_fig.update_layout(
-                xaxis_title=metric_name_map[risk_col],
-                yaxis_title="Number of Counties",
-                font=dict(family="Arial", size=12)
-            )
-            st.plotly_chart(hist_fig, use_container_width=True)
+            # Debug: Check the data in top_10
+            if top_10[risk_col].isna().any() or not pd.api.types.is_numeric_dtype(top_10[risk_col]):
+                st.warning(f"Invalid data in {metric_name_map[risk_col]} for histogram. Please check the data for non-numeric or missing values.")
+                st.write(top_10[[risk_col]])  # Display problematic data for debugging
+            else:
+                # Histogram of Risk Scores
+                hist_fig = px.histogram(
+                    top_10,
+                    x=risk_col,
+                    nbins=10,
+                    title=f"Distribution of {metric_name_map[risk_col]} for Top 10 Counties",
+                    color_discrete_sequence=[colors[h]],
+                    template="plotly_white"
+                )
+                hist_fig.update_layout(
+                    xaxis_title=metric_name_map[risk_col],
+                    yaxis_title="Number of Counties",
+                    font=dict(family="Arial", size=12)
+                )
+                st.plotly_chart(hist_fig, use_container_width=True)
 
-            # Bar Chart Comparing Risk and Low-Income Percentage
-            bar_fig = go.Figure()
-            bar_fig.add_trace(go.Bar(
-                x=top_10["County"],
-                y=top_10[risk_col],
-                name=metric_name_map[risk_col],
-                marker_color=colors[h]
-            ))
-            bar_fig.add_trace(go.Bar(
-                x=top_10["County"],
-                y=top_10["MEAN_low_income_percentage"],
-                name=metric_name_map["MEAN_low_income_percentage"],
-                marker_color="#1f77b4"
-            ))
-            bar_fig.update_layout(
-                title=f"Top 10 Counties: {metric_name_map[risk_col]} vs {metric_name_map['MEAN_low_income_percentage']}",
-                barmode="group",
-                xaxis_title="County",
-                yaxis_title="Value",
-                template="plotly_white",
-                font=dict(family="Arial", size=12),
-                xaxis_tickangle=-45
-            )
-            st.plotly_chart(bar_fig, use_container_width=True)
+            # Debug: Check MEAN_low_income_percentage for the bar chart
+            if top_10["MEAN_low_income_percentage"].isna().any() or not pd.api.types.is_numeric_dtype(top_10["MEAN_low_income_percentage"]):
+                st.warning(f"Invalid data in {metric_name_map['MEAN_low_income_percentage']} for bar chart. Please check the data for non-numeric or missing values.")
+                st.write(top_10[["MEAN_low_income_percentage"]])  # Display problematic data for debugging
+            else:
+                # Bar Chart Comparing Risk and Low-Income Percentage
+                bar_fig = go.Figure()
+                bar_fig.add_trace(go.Bar(
+                    x=top_10["County"],
+                    y=top_10[risk_col],
+                    name=metric_name_map[risk_col],
+                    marker_color=colors[h]
+                ))
+                bar_fig.add_trace(go.Bar(
+                    x=top_10["County"],
+                    y=top_10["MEAN_low_income_percentage"],
+                    name=metric_name_map["MEAN_low_income_percentage"],
+                    marker_color="#1f77b4"
+                ))
+                bar_fig.update_layout(
+                    title=f"Top 10 Counties: {metric_name_map[risk_col]} vs {metric_name_map['MEAN_low_income_percentage']}",
+                    barmode="group",
+                    xaxis_title="County",
+                    yaxis_title="Value",
+                    template="plotly_white",
+                    font=dict(family="Arial", size=12),
+                    xaxis_tickangle=-45
+                )
+                st.plotly_chart(bar_fig, use_container_width=True)
 
             # Download Button
             st.download_button(f"Download {metric_name_map[risk_col]} Table", top_10.to_csv(index=False), f"top_{h}.csv", "text/csv")
