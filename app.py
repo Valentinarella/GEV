@@ -17,30 +17,46 @@ health_url = "https://undivideprojectdata.blob.core.windows.net/gev/health.csv?s
 # --- Loaders ---
 @st.cache_data
 def load_hazard(url, risk_col):
-    df = pd.read_csv(url)
-    df = df.rename(columns={"CF": "County", "SF": "State", "Latitude": "Lat", "Longitude": "Lon", 
-                            "MEAN_low_income_percentage": "Low_Income_Pct", "midcent_median_10yr": risk_col})
-    df["County"] = df["County"].str.title()
-    df["State"] = df["State"].str.title()
-    return df.dropna(subset=["Lat", "Lon", risk_col])
+    try:
+        df = pd.read_csv(url, usecols=["CF", "SF", "Latitude", "Longitude", "MEAN_low_income_percentage", "midcent_median_10yr"])
+        df = df.rename(columns={"CF": "County", "SF": "State", "Latitude": "Lat", "Longitude": "Lon", 
+                                "MEAN_low_income_percentage": "Low_Income_Pct", "midcent_median_10yr": risk_col})
+        df["County"] = df["County"].str.title()
+        df["State"] = df["State"].str.title()
+        return df.dropna(subset=["Lat", "Lon", risk_col])
+    except Exception as e:
+        st.error(f"Error loading data from {url}: {e}")
+        return pd.DataFrame()
 
 @st.cache_data
 def load_census():
-    df = pd.read_csv(census_url)
-    df.columns = df.columns.str.strip()
-    df = df.rename(columns={"County Name": "County", "State/Territory": "State"})
-    df["County"] = df["County"].str.title()
-    df["State"] = df["State"].str.title()
-    return df
+    try:
+        df = pd.read_csv(census_url)
+        df.columns = df.columns.str.strip()
+        df = df.rename(columns={"County Name": "County", "State/Territory": "State"})
+        df["County"] = df["County"].str.title()
+        df["State"] = df["State"].str.title()
+        return df
+    except Exception as e:
+        st.error(f"Error loading census data: {e}")
+        return pd.DataFrame()
 
 @st.cache_data
 def load_health_data():
-    df = pd.read_csv(health_url)
-    df.columns = df.columns.str.strip()
-    df = df.rename(columns={"CF": "County", "SF": "State"})
-    df["County"] = df["County"].str.title()
-    df["State"] = df["State"].str.title()
-    return df.dropna(subset=["MEAN_low_income_percentage"])
+    try:
+        df = pd.read_csv(health_url)
+        df.columns = df.columns.str.strip()
+        df = df.rename(columns={"CF": "County", "SF": "State"})
+        df["County"] = df["County"].str.title()
+        df["State"] = df["State"].str.title()
+        return df.dropna(subset=["MEAN_low_income_percentage"])
+    except Exception as e:
+        st.error(f"Error loading health data: {e}")
+        return pd.DataFrame()
+
+@st.cache_data
+def filter_hazard_data(df, risk_col, threshold):
+    return df[df[risk_col] >= threshold]
 
 # --- Load data ---
 wind_df = load_hazard(wind_url, "Wind_Risk")
@@ -65,48 +81,65 @@ Use this tool to **inform action, investment, and policy**.
 """)
 
 # --- View Selector ---
-view = st.sidebar.radio("Choose Section", ["Hazard Map", "Community Indicators", "Health & Income"])
+st.sidebar.title("Navigation")
+view = st.sidebar.selectbox("Choose Section", 
+                            ["Hazard Map", "Community Indicators", "Health & Income"],
+                            help="Pick a view: Hazard Map for climate risks, Community Indicators for demographics, or Health & Income for disparities.")
 
 # --- Hazard Map View ---
 if view == "Hazard Map":
-    hazard = st.sidebar.selectbox("Hazard", ["Wind Risk", "Drought Risk", "Wildfire Risk"])
+    hazards = st.sidebar.multiselect("Hazards", ["Wind Risk", "Drought Risk", "Wildfire Risk"], default=["Wind Risk"])
     threshold = st.sidebar.slider("Minimum Risk Level", 0.0, 50.0, 5.0, 1.0)
 
-    if hazard == "Wind Risk":
-        df, risk_col, color = wind_df, "Wind_Risk", "Blues"
-    elif hazard == "Drought Risk":
-        df, risk_col, color = drought_df, "Drought_Risk", "Oranges"
-    else:
-        df, risk_col, color = wildfire_df, "Wildfire_Risk", "Reds"
-
-    filtered = df[df[risk_col] >= threshold]
-
-    st.subheader(f"{hazard} Across Counties")
-    fig = go.Figure(go.Scattergeo(
-        lon=filtered["Lon"],
-        lat=filtered["Lat"],
-        text=filtered["County"] + ", " + filtered["State"] + "<br>Risk: " + filtered[risk_col].astype(str),
-        marker=dict(
-            size=filtered["Low_Income_Pct"] * 0.6,
-            color=filtered[risk_col],
-            colorscale=color,
-            showscale=True,
-            colorbar=dict(title=risk_col)
-        )
-    ))
+    st.subheader("Hazard Exposure Across Counties")
+    st.markdown("**Note**: Risk reflects 10-year median projections. Marker size shows low-income %, color intensity shows risk level. Adjust threshold or select multiple hazards to compare.")
+    
+    fig = go.Figure()
+    colors = {"Wind Risk": "Blues", "Drought Risk": "Oranges", "Wildfire Risk": "Reds"}
+    for h in hazards:
+        df, risk_col = (wind_df, "Wind_Risk") if h == "Wind Risk" else (drought_df, "Drought_Risk") if h == "Drought Risk" else (wildfire_df, "Wildfire_Risk")
+        filtered = filter_hazard_data(df, risk_col, threshold)
+        if filtered.empty:
+            st.warning(f"No counties meet the risk threshold for {h}.")
+            continue
+        fig.add_trace(go.Scattergeo(
+            lon=filtered["Lon"],
+            lat=filtered["Lat"],
+            text=filtered["County"] + ", " + filtered["State"] + "<br>" + h + ": " + filtered[risk_col].astype(str),
+            marker=dict(
+                size=filtered["Low_Income_Pct"].clip(0, 100) * 0.15 + 5,  # Cap and scale size
+                color=filtered[risk_col],
+                colorscale=colors[h],
+                showscale=True,
+                colorbar=dict(title=risk_col, tickmode="auto"),
+                sizemode="diameter",
+                sizemin=5
+            ),
+            name=h
+        ))
     fig.update_layout(
         geo=dict(scope="usa", projection_scale=1, center={"lat": 37.1, "lon": -95.7}),
         height=600,
-        margin=dict(r=0, l=0, t=30, b=0)
+        margin=dict(r=0, l=0, t=30, b=0),
+        template="plotly_white",
+        font=dict(family="Arial", size=12)
     )
     st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Top 10 Counties by Risk")
-    st.dataframe(filtered.sort_values(by=risk_col, ascending=False).head(10)[["County", "State", risk_col, "Low_Income_Pct"]])
+    for h in hazards:
+        df, risk_col = (wind_df, "Wind_Risk") if h == "Wind Risk" else (drought_df, "Drought_Risk") if h == "Drought Risk" else (wildfire_df, "Wildfire_Risk")
+        filtered = filter_hazard_data(df, risk_col, threshold)
+        if not filtered.empty:
+            st.dataframe(filtered.sort_values(by=risk_col, ascending=False).head(10)[["County", "State", risk_col, "Low_Income_Pct"]])
+            st.download_button(f"Download {h} Table", filtered.to_csv(index=False), f"top_{h}.csv", "text/csv")
+        else:
+            st.warning(f"No data to display for {h}.")
 
 # --- Community Metrics View ---
 elif view == "Community Indicators":
     st.subheader("Community Disadvantage & Demographics")
+    st.markdown("**Note**: Explore metrics like energy burden or air quality. Higher values indicate greater vulnerability. Adjust 'Top N' to see more counties.")
     metric = st.sidebar.selectbox("Metric", [
         "Identified as disadvantaged",
         "Energy burden",
@@ -123,24 +156,28 @@ elif view == "Community Indicators":
     top = subset.sort_values(by=metric, ascending=False).head(top_n)
 
     st.dataframe(top[["County", "State", metric, "Total population"]] if "Total population" in top.columns else top[["County", "State", metric]])
+    st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
 
     if metric != "Identified as disadvantaged":
-        fig = px.bar(top, x="County", y=metric, color="State", title=f"{metric} by County")
-        fig.update_layout(xaxis_tickangle=-45)
+        fig = px.bar(top, x="County", y=metric, color="State", title=f"{metric} by County",
+                     template="plotly_white")
+        fig.update_layout(xaxis_tickangle=-45, font=dict(family="Arial", size=12))
         st.plotly_chart(fig, use_container_width=True)
 
 # --- Health and Income View ---
 else:
     st.subheader("Community Health and Income Risks")
-    st.markdown("This section highlights where low-income populations face the highest health burdens.")
+    st.markdown("This section highlights where low-income populations face the highest health burdens. Adjust the health metric to compare.")
 
     hist = px.histogram(
         health_df,
         x="MEAN_low_income_percentage",
         nbins=30,
         title="Low-Income Distribution Across Counties",
-        color_discrete_sequence=["#1f77b4"]
+        color_discrete_sequence=["#1f77b4"],
+        template="plotly_white"
     )
+    hist.update_layout(font=dict(family="Arial", size=12))
     st.plotly_chart(hist, use_container_width=True)
 
     metric = st.selectbox("Health Metric", [
@@ -155,6 +192,9 @@ else:
         y=metric,
         color="State",
         title=metric.replace("_", " ").replace("____", ""),
-        hover_data=["MEAN_low_income_percentage"]
+        hover_data=["MEAN_low_income_percentage"],
+        template="plotly_white"
     )
+    bar.update_layout(font=dict(family="Arial", size=12))
     st.plotly_chart(bar, use_container_width=True)
+    st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
