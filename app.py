@@ -70,6 +70,7 @@ def load_health_data():
         df = df.rename(columns={"CF": "County", "SF": "State"})
         df["County"] = df["County"].str.title()
         df["State"] = df["State"].str.title()
+        df["MEAN_low_income_percentage"] = pd.to_numeric(df["MEAN_low_income_percentage"], errors='coerce')
         return df.dropna(subset=["MEAN_low_income_percentage"])
     except Exception as e:
         st.error(f"Error loading health data: {e}")
@@ -104,7 +105,7 @@ Our project, the "Multi-Hazard + Community Vulnerability Dashboard," builds on t
 
 # --- State Filter ---
 st.sidebar.title("Filters")
-states = sorted(health_df["State"].unique().tolist())  # Fixed: Added closing parenthesis
+states = sorted(health_df["State"].unique().tolist())
 selected_state = st.sidebar.selectbox("Select State", ["All"] + states, index=0)
 
 # --- Apply State Filter to Datasets ---
@@ -255,12 +256,17 @@ elif view == "Community Indicators":
 
     subset = census_df_filtered[census_df_filtered[raw_metric].notna()]
     if raw_metric == "Identified as disadvantaged":
+        subset[raw_metric] = subset[raw_metric].astype(str).str.lower() == 'true'
         subset = subset[subset[raw_metric] == True]
     top = subset.sort_values(by=raw_metric, ascending=False).head(top_n)
 
     if top.empty:
         st.warning(f"No data available for {metric} in {selected_state if selected_state != 'All' else 'the selected states'}.")
     else:
+        # Ensure numeric conversion for raw_metric
+        if raw_metric != "Identified as disadvantaged":
+            top[raw_metric] = pd.to_numeric(top[raw_metric], errors='coerce')
+            top = top.dropna(subset=[raw_metric])
         display_df = top[["County", "State", raw_metric, "Total population"]] if "Total population" in top.columns else top[["County", "State", raw_metric]]
         display_df.columns = [col if col not in metric_name_map else metric_name_map[col] for col in display_df.columns]
         st.dataframe(display_df)
@@ -297,7 +303,10 @@ else:
         metric_options = [metric_name_map[m] for m in raw_metrics]
         metric = st.selectbox("Health Metric", metric_options)
         raw_metric = [k for k, v in metric_name_map.items() if v == metric][0]
+        # Ensure numeric conversion for raw_metric
+        health_df_filtered[raw_metric] = pd.to_numeric(health_df_filtered[raw_metric], errors='coerce')
         top = health_df_filtered.sort_values(by=raw_metric, ascending=False).head(10)
+        top = top.dropna(subset=[raw_metric])
 
         st.subheader(f"Top 10 Counties by {metric} in {selected_state if selected_state != 'All' else 'All States'}")
         if top.empty:
@@ -318,6 +327,7 @@ else:
             st.plotly_chart(bar, use_container_width=True)
             display_df = top[["County", "State", raw_metric, "MEAN_low_income_percentage"]]
             display_df.columns = ["County", "State", metric, metric_name_map["MEAN_low_income_percentage"]]
+            st.dataframe(display_df)
             st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
 
 # --- Key Findings ---
