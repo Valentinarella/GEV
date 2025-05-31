@@ -101,6 +101,23 @@ Use this tool to **inform action, investment, and policy**.
 ---
 """)
 
+# --- State Filter ---
+st.sidebar.title("Filters")
+states = sorted(health_df["State"].unique().tolist())
+selected_state = st.sidebar.selectbox("Select State", ["All"] + states, index=0)
+
+# --- Apply State Filter to Datasets ---
+def filter_by_state(df, state):
+    if state == "All":
+        return df
+    return df[df["State"] == state]
+
+wind_df_filtered = filter_by_state(wind_df, selected_state)
+drought_df_filtered = filter_by_state(drought_df, selected_state)
+wildfire_df_filtered = filter_by_state(wildfire_df, selected_state)
+census_df_filtered = filter_by_state(census_df, selected_state)
+health_df_filtered = filter_by_state(health_df, selected_state)
+
 # --- View Selector ---
 st.sidebar.title("Navigation")
 view = st.sidebar.selectbox("Choose Section", 
@@ -114,17 +131,17 @@ if view == "Hazard Map":
     hazards = st.sidebar.multiselect("Hazards", hazard_options, default=["Wind Risk"])
     threshold = st.sidebar.slider("Minimum Risk Level", 0.0, 50.0, 5.0, 1.0)
 
-    st.subheader("Hazard Exposure Across Counties")
+    st.subheader(f"Hazard Exposure Across Counties ({selected_state if selected_state != 'All' else 'All States'})")
     st.markdown("**Note**: Risk reflects 10-year median projections. Marker size shows low-income %, color intensity shows risk level. Adjust threshold or select multiple hazards to compare.")
     
     fig = go.Figure()
     colors = {"Wind Risk": "Blues", "Drought Risk": "Oranges", "Wildfire Risk": "Reds"}
     for h in hazards:
         risk_col = hazard_raw_map[h]
-        df = wind_df if h == "Wind Risk" else drought_df if h == "Drought Risk" else wildfire_df
+        df = wind_df_filtered if h == "Wind Risk" else drought_df_filtered if h == "Drought Risk" else wildfire_df_filtered
         filtered = filter_hazard_data(df, risk_col, threshold)
         if filtered.empty:
-            st.warning(f"No counties meet the risk threshold for {metric_name_map[risk_col]}.")
+            st.warning(f"No counties meet the risk threshold for {metric_name_map[risk_col]} in {selected_state if selected_state != 'All' else 'the selected states'}.")
             continue
         fig.add_trace(go.Scattergeo(
             lon=filtered["Lon"],
@@ -150,10 +167,10 @@ if view == "Hazard Map":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Top 10 Counties by Risk")
+    st.subheader(f"Top 10 Counties by Risk ({selected_state if selected_state != 'All' else 'All States'})")
     for h in hazards:
         risk_col = hazard_raw_map[h]
-        df = wind_df if h == "Wind Risk" else drought_df if h == "Drought Risk" else wildfire_df
+        df = wind_df_filtered if h == "Wind Risk" else drought_df_filtered if h == "Drought Risk" else wildfire_df_filtered
         filtered = filter_hazard_data(df, risk_col, threshold)
         if not filtered.empty:
             display_df = filtered.sort_values(by=risk_col, ascending=False).head(10)[["County", "State", risk_col, "MEAN_low_income_percentage"]]
@@ -161,11 +178,11 @@ if view == "Hazard Map":
             st.dataframe(display_df)
             st.download_button(f"Download {metric_name_map[risk_col]} Table", filtered.to_csv(index=False), f"top_{h}.csv", "text/csv")
         else:
-            st.warning(f"No data to display for {metric_name_map[risk_col]}.")
+            st.warning(f"No data to display for {metric_name_map[risk_col]} in {selected_state if selected_state != 'All' else 'the selected states'}.")
 
 # --- Community Metrics View ---
 elif view == "Community Indicators":
-    st.subheader("Community Disadvantage & Demographics")
+    st.subheader(f"Community Disadvantage & Demographics ({selected_state if selected_state != 'All' else 'All States'})")
     st.markdown("**Note**: Explore metrics like energy burden or air quality. Higher values indicate greater vulnerability. Adjust 'Top N' to see more counties.")
     raw_metrics = [
         "Identified as disadvantaged", "Energy burden", "PM2.5 in the air",
@@ -177,60 +194,69 @@ elif view == "Community Indicators":
     raw_metric = [k for k, v in metric_name_map.items() if v == metric][0]
     top_n = st.sidebar.slider("Top N", 5, 50, 10)
 
-    subset = census_df[census_df[raw_metric].notna()]
+    subset = census_df_filtered[census_df_filtered[raw_metric].notna()]
     if raw_metric == "Identified as disadvantaged":
         subset = subset[subset[raw_metric] == True]
     top = subset.sort_values(by=raw_metric, ascending=False).head(top_n)
 
-    display_df = top[["County", "State", raw_metric, "Total population"]] if "Total population" in top.columns else top[["County", "State", raw_metric]]
-    display_df.columns = [col if col not in metric_name_map else metric_name_map[col] for col in display_df.columns]
-    st.dataframe(display_df)
-    st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
+    if top.empty:
+        st.warning(f"No data available for {metric} in {selected_state if selected_state != 'All' else 'the selected states'}.")
+    else:
+        display_df = top[["County", "State", raw_metric, "Total population"]] if "Total population" in top.columns else top[["County", "State", raw_metric]]
+        display_df.columns = [col if col not in metric_name_map else metric_name_map[col] for col in display_df.columns]
+        st.dataframe(display_df)
+        st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
 
-    if raw_metric != "Identified as disadvantaged":
-        fig = px.bar(top, x="County", y=raw_metric, color="State", title=f"{metric} by County",
-                     template="plotly_white")
-        fig.update_layout(xaxis_tickangle=-45, font=dict(family="Arial", size=12))
-        fig.update_yaxes(title_text=metric)
-        st.plotly_chart(fig, use_container_width=True)
+        if raw_metric != "Identified as disadvantaged":
+            fig = px.bar(top, x="County", y=raw_metric, color="State", title=f"{metric} by County in {selected_state if selected_state != 'All' else 'All States'}",
+                         template="plotly_white")
+            fig.update_layout(xaxis_tickangle=-45, font=dict(family="Arial", size=12))
+            fig.update_yaxes(title_text=metric)
+            st.plotly_chart(fig, use_container_width=True)
 
 # --- Health and Income View ---
 else:
-    st.subheader("Community Health and Income Risks")
+    st.subheader(f"Community Health and Income Risks ({selected_state if selected_state != 'All' else 'All States'})")
     st.markdown("This section highlights where low-income populations face the highest health burdens. Adjust the health metric to compare.")
 
-    hist = px.histogram(
-        health_df,
-        x="MEAN_low_income_percentage",
-        nbins=30,
-        title="Low-Income Distribution Across Counties",
-        color_discrete_sequence=["#1f77b4"],
-        template="plotly_white"
-    )
-    hist.update_layout(font=dict(family="Arial", size=12))
-    hist.update_xaxes(title_text=metric_name_map["MEAN_low_income_percentage"])
-    st.plotly_chart(hist, use_container_width=True)
+    if health_df_filtered.empty:
+        st.warning(f"No health data available for {selected_state if selected_state != 'All' else 'the selected states'}.")
+    else:
+        hist = px.histogram(
+            health_df_filtered,
+            x="MEAN_low_income_percentage",
+            nbins=30,
+            title=f"Low-Income Distribution Across Counties in {selected_state if selected_state != 'All' else 'All States'}",
+            color_discrete_sequence=["#1f77b4"],
+            template="plotly_white"
+        )
+        hist.update_layout(font=dict(family="Arial", size=12))
+        hist.update_xaxes(title_text=metric_name_map["MEAN_low_income_percentage"])
+        st.plotly_chart(hist, use_container_width=True)
 
-    raw_metrics = ["Asthma_Rate____", "Diabetes_Rate____", "Heart_Disease_Rate____", "Life_expectancy__years_"]
-    metric_options = [metric_name_map[m] for m in raw_metrics]
-    metric = st.selectbox("Health Metric", metric_options)
-    raw_metric = [k for k, v in metric_name_map.items() if v == metric][0]
-    top = health_df.sort_values(by=raw_metric, ascending=False).head(10)
+        raw_metrics = ["Asthma_Rate____", "Diabetes_Rate____", "Heart_Disease_Rate____", "Life_expectancy__years_"]
+        metric_options = [metric_name_map[m] for m in raw_metrics]
+        metric = st.selectbox("Health Metric", metric_options)
+        raw_metric = [k for k, v in metric_name_map.items() if v == metric][0]
+        top = health_df_filtered.sort_values(by=raw_metric, ascending=False).head(10)
 
-    st.subheader(f"Top 10 Counties by {metric}")
-    bar = px.bar(
-        top,
-        x="County",
-        y=raw_metric,
-        color="State",
-        title=f"{metric} by County",
-        hover_data=["MEAN_low_income_percentage"],
-        template="plotly_white"
-    )
-    bar.update_layout(font=dict(family="Arial", size=12))
-    bar.update_yaxes(title_text=metric)
-    bar.update_traces(hovertemplate="County: %{x}<br>" + metric + ": %{y}<br>" + metric_name_map["MEAN_low_income_percentage"] + ": %{customdata}")
-    st.plotly_chart(bar, use_container_width=True)
-    display_df = top[["County", "State", raw_metric, "MEAN_low_income_percentage"]]
-    display_df.columns = ["County", "State", metric, metric_name_map["MEAN_low_income_percentage"]]
-    st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
+        st.subheader(f"Top 10 Counties by {metric} in {selected_state if selected_state != 'All' else 'All States'}")
+        if top.empty:
+            st.warning(f"No data available for {metric} in {selected_state if selected_state != 'All' else 'the selected states'}.")
+        else:
+            bar = px.bar(
+                top,
+                x="County",
+                y=raw_metric,
+                color="State",
+                title=f"Top 10 Counties for {metric} in {selected_state if selected_state != 'All' else 'All States'}",
+                hover_data=["MEAN_low_income_percentage"],
+                template="plotly_white"
+            )
+            bar.update_layout(font=dict(family="Arial", size=12))
+            bar.update_yaxes(title_text=metric)
+            bar.update_traces(hovertemplate="County: %{x}<br>" + metric + ": %{y}<br>" + metric_name_map["MEAN_low_income_percentage"] + ": %{customdata}")
+            st.plotly_chart(bar, use_container_width=True)
+            display_df = top[["County", "State", raw_metric, "MEAN_low_income_percentage"]]
+            display_df.columns = ["County", "State", metric, metric_name_map["MEAN_low_income_percentage"]]
+            st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
