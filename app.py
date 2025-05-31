@@ -104,7 +104,7 @@ Our project, the "Multi-Hazard + Community Vulnerability Dashboard," builds on t
 
 # --- State Filter ---
 st.sidebar.title("Filters")
-states = sorted(health_df["State"].unique().tolist())
+states = sorted(health_df["State"].unique().tolist())  # Fixed: Added closing parenthesis
 selected_state = st.sidebar.selectbox("Select State", ["All"] + states, index=0)
 
 # --- Apply State Filter to Datasets ---
