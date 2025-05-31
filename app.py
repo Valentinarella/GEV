@@ -146,7 +146,7 @@ if view == "Hazard Map":
                 size=filtered["MEAN_low_income_percentage"].clip(0, 100) * 0.15 + 5,
                 color=filtered[risk_col],
                 colorscale=colors[h],
-                showscale=False,  # Remove the legend (colorbar)
+                showscale=False,
                 sizemode="diameter",
                 sizemin=5
             ),
@@ -167,10 +167,51 @@ if view == "Hazard Map":
         df = wind_df_filtered if h == "Wind Risk" else drought_df_filtered if h == "Drought Risk" else wildfire_df_filtered
         filtered = filter_hazard_data(df, risk_col, threshold)
         if not filtered.empty:
-            display_df = filtered.sort_values(by=risk_col, ascending=False).head(10)[["County", "State", risk_col, "MEAN_low_income_percentage"]]
-            display_df.columns = ["County", "State", metric_name_map[risk_col], metric_name_map["MEAN_low_income_percentage"]]
-            st.dataframe(display_df)
-            st.download_button(f"Download {metric_name_map[risk_col]} Table", filtered.to_csv(index=False), f"top_{h}.csv", "text/csv")
+            top_10 = filtered.sort_values(by=risk_col, ascending=False).head(10)
+            
+            # Histogram of Risk Scores
+            hist_fig = px.histogram(
+                top_10,
+                x=risk_col,
+                nbins=10,
+                title=f"Distribution of {metric_name_map[risk_col]} for Top 10 Counties",
+                color_discrete_sequence=[colors[h]],
+                template="plotly_white"
+            )
+            hist_fig.update_layout(
+                xaxis_title=metric_name_map[risk_col],
+                yaxis_title="Number of Counties",
+                font=dict(family="Arial", size=12)
+            )
+            st.plotly_chart(hist_fig, use_container_width=True)
+
+            # Bar Chart Comparing Risk and Low-Income Percentage
+            bar_fig = go.Figure()
+            bar_fig.add_trace(go.Bar(
+                x=top_10["County"],
+                y=top_10[risk_col],
+                name=metric_name_map[risk_col],
+                marker_color=colors[h]
+            ))
+            bar_fig.add_trace(go.Bar(
+                x=top_10["County"],
+                y=top_10["MEAN_low_income_percentage"],
+                name=metric_name_map["MEAN_low_income_percentage"],
+                marker_color="#1f77b4"
+            ))
+            bar_fig.update_layout(
+                title=f"Top 10 Counties: {metric_name_map[risk_col]} vs {metric_name_map['MEAN_low_income_percentage']}",
+                barmode="group",
+                xaxis_title="County",
+                yaxis_title="Value",
+                template="plotly_white",
+                font=dict(family="Arial", size=12),
+                xaxis_tickangle=-45
+            )
+            st.plotly_chart(bar_fig, use_container_width=True)
+
+            # Download Button
+            st.download_button(f"Download {metric_name_map[risk_col]} Table", top_10.to_csv(index=False), f"top_{h}.csv", "text/csv")
         else:
             st.warning(f"No data to display for {metric_name_map[risk_col]} in {selected_state if selected_state != 'All' else 'the selected states'}.")
 
