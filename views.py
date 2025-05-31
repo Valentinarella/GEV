@@ -1,18 +1,8 @@
-# views.py
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-from data_loader import filter_hazard_data  # Added import for filter_hazard_data
-
-def show_introduction():
-    st.markdown("""
-    ### Introduction
-    The "Ten State Project" is a research initiative focused on evaluating climate risk vulnerabilities across ten U.S. states, emphasizing the interplay between environmental hazards, socioeconomic challenges, and health outcomes. By integrating advanced climate modeling with socioeconomic and health data, the project identifies regions most susceptible to extreme weather events like droughts, wildfires, and windstorms, particularly in low-income and marginalized communities. It aims to raise awareness among local populations about the compounded risks they face, such as increased asthma prevalence due to environmental stressors, and to provide data-driven insights for building resilience. The project uses tools like the Generalized Extreme Value (GEV) model to forecast future climate risks and overlays this with health and economic indicators to highlight disparities, enabling targeted interventions for at-risk areas.
-
-    Our project, the "Multi-Hazard + Community Vulnerability Dashboard," builds on the "Ten State Project" by offering an interactive tool to explore these vulnerabilities at the county level across the U.S. We utilize datasets from AT&T Climate Resiliency, covering drought, wildfire, and wind risks, alongside U.S. Census Bureau data on socioeconomic factors and health metrics like asthma and diabetes rates. The dashboard allows users to filter by state, hazard type, and health indicators, providing a granular view of how climate risks intersect with economic and health challenges. For instance, users can filter for Texas to see counties with high asthma rates and low-income populations, or examine Georgia for life expectancy disparities. By making this data accessible, we aim to empower community leaders, policymakers, and residents to address climate risks equitably, bridging the gap between complex data and actionable insights for vulnerable populations.
-
-    ---
-    """)
+import pandas as pd  # Added for merging and numeric operations
+from data_loader import filter_hazard_data  # Already imported
 
 def hazard_map_view(wind_df_filtered, drought_df_filtered, wildfire_df_filtered, selected_state, metric_name_map):
     hazard_options = ["Wind Risk", "Drought Risk", "Wildfire Risk"]
@@ -121,95 +111,85 @@ def hazard_map_view(wind_df_filtered, drought_df_filtered, wildfire_df_filtered,
         else:
             st.warning(f"No data to display for {metric_name_map[risk_col]} in {selected_state if selected_state != 'All' else 'the selected states'}.")
 
-def community_indicators_view(census_df_filtered, selected_state, metric_name_map):
-    st.subheader(f"Community Disadvantage & Demographics ({selected_state if selected_state != 'All' else 'All States'})")
-    st.markdown("**Note**: Explore metrics like energy burden or air quality. Higher values indicate greater vulnerability. Adjust 'Top N' to see more counties.")
-    raw_metrics = [
-        "Identified as disadvantaged", "Energy burden", "PM2.5 in the air",
-        "Current asthma among adults aged greater than or equal to 18 years",
-        "Share of properties at risk of fire in 30 years", "Total population"
-    ]
-    metric_options = [metric_name_map[m] for m in raw_metrics]
-    metric = st.sidebar.selectbox("Metric", metric_options)
-    raw_metric = [k for k, v in metric_name_map.items() if v == metric][0]
-    top_n = st.sidebar.slider("Top N", 5, 50, 10)
-
-    subset = census_df_filtered[census_df_filtered[raw_metric].notna()]
-    if raw_metric == "Identified as disadvantaged":
-        subset[raw_metric] = subset[raw_metric].astype(str).str.lower() == 'true'
-        subset = subset[subset[raw_metric] == True]
-    top = subset.sort_values(by=raw_metric, ascending=False).head(top_n)
-
-    if top.empty:
-        st.warning(f"No data available for {metric} in {selected_state if selected_state != 'All' else 'the selected states'}.")
+    # New Section: Top 10 Counties by Combined Risk (All States)
+    st.subheader("Top 10 Counties by Combined Risk (All States)")
+    hazard_dfs = {
+        "Wind_Risk": wind_df_filtered,
+        "Drought_Risk": drought_df_filtered,
+        "Wildfire_Risk": wildfire_df_filtered
+    }
+    combined_df = None
+    for risk_col, df in hazard_dfs.items():
+        filtered = filter_hazard_data(df, risk_col, threshold)
+        if not filtered.empty:
+            # Normalize risk scores to 0-100 for fair comparison
+            filtered[risk_col] = pd.to_numeric(filtered[risk_col], errors='coerce')
+            max_val = filtered[risk_col].max()
+            min_val = filtered[risk_col].min()
+            if max_val != min_val:  # Avoid division by zero
+                filtered[f"Normalized_{risk_col}"] = 100 * (filtered[risk_col] - min_val) / (max_val - min_val)
+            else:
+                filtered[f"Normalized_{risk_col}"] = 100  # If all values are same, set to max
+            # Select columns for merging
+            subset = filtered[["County", "State", f"Normalized_{risk_col}", "MEAN_low_income_percentage"]]
+            if combined_df is None:
+                combined_df = subset
+            else:
+                combined_df = combined_df.merge(
+                    subset,
+                    on=["County", "State", "MEAN_low_income_percentage"],
+                    how="outer"
+                )
+    
+    if combined_df is None or combined_df.empty:
+        st.warning("No data available to compute combined risk across all hazards.")
     else:
-        if raw_metric != "Identified as disadvantaged":
-            top[raw_metric] = pd.to_numeric(top[raw_metric], errors='coerce')
-            top = top.dropna(subset=[raw_metric])
-        display_df = top[["County", "State", raw_metric, "Total population"]] if "Total population" in top.columns else top[["County", "State", raw_metric]]
-        display_df.columns = [col if col not in metric_name_map else metric_name_map[col] for col in display_df.columns]
-        st.dataframe(display_df)
-        st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
-
-        if raw_metric != "Identified as disadvantaged":
-            fig = px.bar(top, x="County", y=raw_metric, color="State", title=f"{metric} by County in {selected_state if selected_state != 'All' else 'All States'}",
-                         template="plotly_white")
-            fig.update_layout(xaxis_tickangle=-45, font=dict(family="Arial", size=12))
-            fig.update_yaxes(title_text=metric)
-            st.plotly_chart(fig, use_container_width=True)
-
-def health_income_view(health_df_filtered, selected_state, metric_name_map):
-    st.subheader(f"Community Health and Income Risks ({selected_state if selected_state != 'All' else 'All States'})")
-    st.markdown("This section highlights where low-income populations face the highest health burdens. Adjust the health metric to compare.")
-
-    if health_df_filtered.empty:
-        st.warning(f"No health data available for {selected_state if selected_state != 'All' else 'the selected states'}.")
-    else:
-        hist = px.histogram(
-            health_df_filtered,
-            x="MEAN_low_income_percentage",
-            nbins=30,
-            title=f"Low-Income Distribution Across Counties in {selected_state if selected_state != 'All' else 'All States'}",
-            color_discrete_sequence=["#1f77b4"],
-            template="plotly_white"
-        )
-        hist.update_layout(font=dict(family="Arial", size=12))
-        hist.update_xaxes(title_text=metric_name_map["MEAN_low_income_percentage"])
-        st.plotly_chart(hist, use_container_width=True)
-
-        raw_metrics = ["Asthma_Rate____", "Diabetes_Rate____", "Heart_Disease_Rate____", "Life_expectancy__years_"]
-        metric_options = [metric_name_map[m] for m in raw_metrics]
-        metric = st.selectbox("Health Metric", metric_options)
-        raw_metric = [k for k, v in metric_name_map.items() if v == metric][0]
-        health_df_filtered[raw_metric] = pd.to_numeric(health_df_filtered[raw_metric], errors='coerce')
-        top = health_df_filtered.sort_values(by=raw_metric, ascending=False).head(10)
-        top = top.dropna(subset=[raw_metric])
-
-        st.subheader(f"Top 10 Counties by {metric} in {selected_state if selected_state != 'All' else 'All States'}")
-        if top.empty:
-            st.warning(f"No data available for {metric} in {selected_state if selected_state != 'All' else 'the selected states'}.")
+        # Calculate average normalized risk
+        norm_cols = [f"Normalized_{col}" for col in hazard_dfs.keys()]
+        combined_df["Combined_Risk"] = combined_df[norm_cols].mean(axis=1)
+        combined_df["MEAN_low_income_percentage"] = pd.to_numeric(combined_df["MEAN_low_income_percentage"], errors='coerce')
+        top_10_combined = combined_df.dropna(subset=["Combined_Risk", "MEAN_low_income_percentage"])
+        top_10_combined = top_10_combined.sort_values(by="Combined_Risk", ascending=False).head(10)
+        
+        if top_10_combined.empty:
+            st.warning("No valid data to plot for combined risk after cleaning. Displaying raw data instead.")
+            st.dataframe(combined_df.head(10))
         else:
-            bar = px.bar(
-                top,
-                x="County",
-                y=raw_metric,
-                color="State",
-                title=f"Top 10 Counties for {metric} in {selected_state if selected_state != 'All' else 'All States'}",
-                hover_data=["MEAN_low_income_percentage"],
-                template="plotly_white"
-            )
-            bar.update_layout(font=dict(family="Arial", size=12))
-            bar.update_yaxes(title_text=metric)
-            bar.update_traces(hovertemplate="County: %{x}<br>" + metric + ": %{y}<br>" + metric_name_map["MEAN_low_income_percentage"] + ": %{customdata}")
-            st.plotly_chart(bar, use_container_width=True)
-            display_df = top[["County", "State", raw_metric, "MEAN_low_income_percentage"]]
-            display_df.columns = ["County", "State", metric, metric_name_map["MEAN_low_income_percentage"]]
+            try:
+                bar_fig = go.Figure()
+                bar_fig.add_trace(go.Bar(
+                    x=top_10_combined["County"],
+                    y=top_10_combined["Combined_Risk"],
+                    name="Combined Risk Score",
+                    marker_color="#ff4500"  # Orange-red for combined risk
+                ))
+                bar_fig.add_trace(go.Bar(
+                    x=top_10_combined["County"],
+                    y=top_10_combined["MEAN_low_income_percentage"],
+                    name=metric_name_map["MEAN_low_income_percentage"],
+                    marker_color="#1f77b4"  # Blue for low-income, consistent with app
+                ))
+                bar_fig.update_layout(
+                    title="Top 10 Counties: Combined Risk vs Low-Income Percentage (All States)",
+                    barmode="group",
+                    xaxis_title="County",
+                    yaxis_title="Value",
+                    template="plotly_white",
+                    font=dict(family="Arial", size=12),
+                    xaxis_tickangle=-45
+                )
+                st.plotly_chart(bar_fig, use_container_width=True)
+            except Exception as e:
+                st.warning(f"Failed to create bar chart for combined risk. Displaying raw data instead. Error: {str(e)}")
+                st.dataframe(top_10_combined)
+            
+            # Display and download
+            display_df = top_10_combined[["County", "State", "Combined_Risk", "MEAN_low_income_percentage"]]
+            display_df.columns = ["County", "State", "Combined Risk Score", metric_name_map["MEAN_low_income_percentage"]]
             st.dataframe(display_df)
-            st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
-
-def show_key_findings():
-    st.markdown("""
-    ### Key Findings
-    - **Health and Income Disparities in Texas**: In the "Health & Income" section, filtering for Texas reveals significant overlaps between asthma rates and low-income populations. For example, Motley County has an asthma rate of 70% and a low-income population percentage of 45%, while Foard County shows an asthma rate of 68% with a low-income percentage of 42%. These counties rank among the top 10 for asthma prevalence, indicating a strong correlation between economic disadvantage and respiratory health challenges. Users can filter for Texas and select "Asthma Rate (%)" to explore these patterns.
-    - **Climate Risk Patterns in Georgia**: In the "Hazard Map" section, selecting Georgia highlights counties like Ware and Bacon, which have low-income populations around 40%. These counties also face elevated wildfire risks, with scores reaching up to 60 on the 50-year projection scale. This suggests a compounded vulnerability in these areas. Users can filter for Georgia, choose "Wildfire Risk," and set the risk threshold to 50 to see similar results.
-    """)
+            st.download_button(
+                "Download Combined Risk Table",
+                top_10_combined.to_csv(index=False),
+                "top_combined_risk.csv",
+                "text/csv"
+            )
