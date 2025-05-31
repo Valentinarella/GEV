@@ -95,34 +95,36 @@ You can use the sidebar to:
 - Set a minimum risk threshold to highlight the most at-risk places
 """)
 
-    fig = go.Figure(go.Scattergeo(
-        lon=data["Lon"],
-        lat=data["Lat"],
-        text=data["County"] + ", " + data["State"] + "<br>Risk: " + data[risk_col].astype(str),
-        marker=dict(
-            size=data["Low_Income_Pct"] * 0.7,
-            color=data[risk_col],
-            colorscale=colorscale,
-            showscale=True,
-            colorbar=dict(title=risk_col)
+    if data.empty:
+        st.warning("No communities meet the selected risk threshold.")
+    else:
+        fig = go.Figure(go.Scattergeo(
+            lon=data["Lon"],
+            lat=data["Lat"],
+            text=data["County"] + ", " + data["State"] + "<br>Risk: " + data[risk_col].astype(str),
+            marker=dict(
+                size=data["Low_Income_Pct"] * 0.7,
+                color=data[risk_col],
+                colorscale=colorscale,
+                showscale=True,
+                colorbar=dict(title=risk_col)
+            )
+        ))
+
+        fig.update_layout(
+            geo=dict(
+                scope="usa",
+                landcolor="lightgray",
+                subunitcolor="white",
+                projection_scale=1,
+                center={"lat": 37.0902, "lon": -95.7129}
+            ),
+            height=600,
+            margin={"r": 0, "t": 30, "l": 0, "b": 0}
         )
-    ))
 
-    fig.update_layout(
-        geo=dict(
-            scope="usa",
-            landcolor="lightgray",
-            subunitcolor="white",
-            projection_scale=1,
-            center={"lat": 37.0902, "lon": -95.7129}
-        ),
-        height=600,
-        margin={"r": 0, "t": 30, "l": 0, "b": 0}
-    )
+        st.plotly_chart(fig, use_container_width=True)
 
-    st.plotly_chart(fig, use_container_width=True)
-
-    if not data.empty:
         st.subheader("Top 10 Counties by Risk")
         st.dataframe(data.sort_values(by=risk_col, ascending=False).head(10)[["County", "State", risk_col, "Low_Income_Pct"]])
 
