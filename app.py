@@ -47,6 +47,20 @@ drought_df = load_hazard(drought_url, "Drought_Risk")
 wildfire_df = load_hazard(wildfire_url, "Wildfire_Risk")
 census_df = load_census()
 
+# --- Intro Section ---
+st.title("\ud83d\udcca Multi-Hazard + Community Vulnerability Dashboard")
+st.markdown("""
+Welcome to this interactive dashboard created for stakeholders and decision-makers.
+
+This tool is designed to help **identify and understand communities across the U.S. that face overlapping risks**:
+- **Environmental hazards** such as wind, drought, and wildfire
+- **Social and economic burdens**, including energy costs, air pollution, and health disparities
+
+By combining these perspectives, we can prioritize where support, funding, and intervention may have the greatest impact.
+
+---
+""")
+
 # --- Sidebar view toggle ---
 view = st.sidebar.radio("Choose View", ["Hazard Map", "Community Data"])
 
@@ -69,6 +83,17 @@ if view == "Hazard Map":
         colorscale = "Reds"
 
     data = df[df[risk_col] >= min_value]
+
+    st.subheader("\ud83c\udf2a Hazard Exposure Map")
+    st.markdown(f"""
+Use this view to explore **geographic exposure** to selected climate hazards.
+
+Each point represents a community (usually county-level), sized by **low-income percentage** and colored by the level of **{hazard.lower()}** risk.
+
+You can use the sidebar to:
+- Switch between hazards (Wind, Drought, Wildfire)
+- Set a minimum risk threshold to highlight the most at-risk places
+""")
 
     fig = go.Figure(go.Scattergeo(
         lon=data["Lon"],
@@ -95,16 +120,32 @@ if view == "Hazard Map":
         margin={"r": 0, "t": 30, "l": 0, "b": 0}
     )
 
-    st.title(f"{hazard} Across U.S. Counties")
     st.plotly_chart(fig, use_container_width=True)
 
     if not data.empty:
         st.subheader("Top 10 Counties by Risk")
         st.dataframe(data.sort_values(by=risk_col, ascending=False).head(10)[["County", "State", risk_col, "Low_Income_Pct"]])
 
+    st.markdown("### \ud83d\udccc Why This Matters")
+    st.markdown("""
+This map helps pinpoint where **climate hazards and poverty intersect**, giving a clearer picture of where resources and resilience efforts are most urgently needed.
+""")
+
 # --- View: Community Data (no map) ---
 else:
-    st.title("Community Data Viewer")
+    st.subheader("\ud83c\udfe1 Community-Level Indicators")
+    st.markdown("""
+This section focuses on **who lives in these communities** — not just the physical risks they face.
+
+Each chart shows communities ranked by key social or environmental indicators, such as:
+- Energy burden
+- PM2.5 air pollution
+- Asthma prevalence
+- Fire risk at the property level
+
+Use this to understand which communities may be **most vulnerable**, and why.
+""")
+
     metric = st.sidebar.selectbox("Select Community Metric", [
         "Identified as disadvantaged",
         "Energy burden",
@@ -125,7 +166,6 @@ else:
     top = community.sort_values(by=metric, ascending=False).head(show_top_n) if metric != "Identified as disadvantaged" else community.head(show_top_n)
     st.dataframe(top[["County", "State", metric, "Total population"]] if "Total population" in top.columns else top[["County", "State", metric]])
 
-    # --- Bar chart ---
     if metric != "Identified as disadvantaged":
         st.subheader("Bar Chart")
         fig = px.bar(
@@ -138,12 +178,19 @@ else:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # --- Storytelling section ---
-    st.markdown("### 📖 Story Snapshot")
+    st.markdown("### \ud83d\udcd6 Story Snapshot")
     top_states = top["State"].value_counts().head(3).index.tolist()
     st.markdown(f"""
 Communities with the highest **{metric}** are concentrated in: **{', '.join(top_states)}**.
 
 These areas may be disproportionately affected by social, health, or environmental burdens.  
 Use this data to understand where need is greatest and where support may have the most impact.
+""")
+
+    st.markdown("### \ud83d\udd8b\ufe0f Final Thoughts")
+    st.markdown("""
+The goal is not just to view the data, but to use it:
+- For **equity-informed policy**
+- For **targeted investments**
+- And for a more resilient, healthier future for all
 """)
