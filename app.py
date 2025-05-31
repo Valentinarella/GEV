@@ -9,19 +9,16 @@ st.cache_data.clear()
 
 # --- Metric Name Mapping ---
 metric_name_map = {
-    # Hazard Metrics
     "Wind_Risk": "Wind Risk Score",
     "Drought_Risk": "Drought Risk Score",
     "Wildfire_Risk": "Wildfire Risk Score",
     "MEAN_low_income_percentage": "Low-Income Population (%)",
-    # Community Metrics
     "Identified as disadvantaged": "Disadvantaged Community",
     "Energy burden": "Energy Burden (%)",
     "PM2.5 in the air": "PM2.5 Air Pollution (µg/m³)",
     "Current asthma among adults aged greater than or equal to 18 years": "Adult Asthma Rate (%)",
     "Share of properties at risk of fire in 30 years": "Properties at Fire Risk (%)",
     "Total population": "Total Population",
-    # Health Metrics
     "Asthma_Rate____": "Asthma Rate (%)",
     "Diabetes_Rate____": "Diabetes Rate (%)",
     "Heart_Disease_Rate____": "Heart Disease Rate (%)",
@@ -88,15 +85,13 @@ health_df = load_health_data()
 
 # --- UI Setup ---
 st.title("📊 Multi-Hazard + Community Vulnerability Dashboard")
+
+# --- Introduction ---
 st.markdown("""
-Welcome to this dashboard for identifying **climate risk** and **community vulnerability**.
+### Introduction
+The "Ten State Project" is a research initiative focused on evaluating climate risk vulnerabilities across ten U.S. states, emphasizing the interplay between environmental hazards, socioeconomic challenges, and health outcomes. By integrating advanced climate modeling with socioeconomic and health data, the project identifies regions most susceptible to extreme weather events like droughts, wildfires, and windstorms, particularly in low-income and marginalized communities. It aims to raise awareness among local populations about the compounded risks they face, such as increased asthma prevalence due to environmental stressors, and to provide data-driven insights for building resilience. The project uses tools like the Generalized Extreme Value (GEV) model to forecast future climate risks and overlays this with health and economic indicators to highlight disparities, enabling targeted interventions for at-risk areas.
 
-It brings together:
-- Hazard exposure (wind, drought, wildfire)
-- Demographic and economic burdens
-- Health disparities
-
-Use this tool to **inform action, investment, and policy**.
+Our project, the "Multi-Hazard + Community Vulnerability Dashboard," builds on the "Ten State Project" by offering an interactive tool to explore these vulnerabilities at the county level across the U.S. We utilize datasets from AT&T Climate Resiliency, covering drought, wildfire, and wind risks, alongside U.S. Census Bureau data on socioeconomic factors and health metrics like asthma and diabetes rates. The dashboard allows users to filter by state, hazard type, and health indicators, providing a granular view of how climate risks intersect with economic and health challenges. For instance, users can filter for Texas to see counties with high asthma rates and low-income populations, or examine Georgia for life expectancy disparities. By making this data accessible, we aim to empower community leaders, policymakers, and residents to address climate risks equitably, bridging the gap between complex data and actionable insights for vulnerable populations.
 
 ---
 """)
@@ -151,8 +146,7 @@ if view == "Hazard Map":
                 size=filtered["MEAN_low_income_percentage"].clip(0, 100) * 0.15 + 5,
                 color=filtered[risk_col],
                 colorscale=colors[h],
-                showscale=True,
-                colorbar=dict(title=metric_name_map[risk_col], tickmode="auto"),
+                showscale=False,  # Remove the legend (colorbar)
                 sizemode="diameter",
                 sizemin=5
             ),
@@ -260,3 +254,10 @@ else:
             display_df = top[["County", "State", raw_metric, "MEAN_low_income_percentage"]]
             display_df.columns = ["County", "State", metric, metric_name_map["MEAN_low_income_percentage"]]
             st.download_button(f"Download {metric} Table", top.to_csv(index=False), f"top_{metric}.csv", "text/csv")
+
+# --- Key Findings ---
+st.markdown("""
+### Key Findings
+- **Health and Income Disparities in Texas**: In the "Health & Income" section, filtering for Texas reveals significant overlaps between asthma rates and low-income populations. For example, Motley County has an asthma rate of 70% and a low-income population percentage of 45%, while Foard County shows an asthma rate of 68% with a low-income percentage of 42%. These counties rank among the top 10 for asthma prevalence, indicating a strong correlation between economic disadvantage and respiratory health challenges. Users can filter for Texas and select "Asthma Rate (%)" to explore these patterns.
+- **Climate Risk Patterns in Georgia**: In the "Hazard Map" section, selecting Georgia highlights counties like Ware and Bacon, which have low-income populations around 40%. These counties also face elevated wildfire risks, with scores reaching up to 60 on the 50-year projection scale. This suggests a compounded vulnerability in these areas. Users can filter for Georgia, choose "Wildfire Risk," and set the risk threshold to 50 to see similar results.
+""")
