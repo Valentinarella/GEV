@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 
 # --- Page config ---
 st.set_page_config(layout="wide")
@@ -34,13 +35,11 @@ def load_census():
     df.columns = df.columns.str.strip()
     df = df.rename(columns={
         "County Name": "County",
-        "State/Territory": "State",
-        "Latitude": "Lat",
-        "Longitude": "Lon"
+        "State/Territory": "State"
     })
     df["County"] = df["County"].str.title()
     df["State"] = df["State"].str.title()
-    return df.dropna(subset=["Lat", "Lon"])
+    return df
 
 # --- Load datasets ---
 wind_df = load_hazard(wind_url, "Wind_Risk")
@@ -48,14 +47,13 @@ drought_df = load_hazard(drought_url, "Drought_Risk")
 wildfire_df = load_hazard(wildfire_url, "Wildfire_Risk")
 census_df = load_census()
 
-# --- Sidebar: View toggle ---
-view = st.sidebar.radio("Choose View", ["Hazard Map", "Community Map"])
+# --- Sidebar view toggle ---
+view = st.sidebar.radio("Choose View", ["Hazard Map", "Community Data"])
 
-# --- Hazard View ---
+# --- View: Hazard Map ---
 if view == "Hazard Map":
     hazard = st.sidebar.selectbox("Hazard Type", ["Wind Risk", "Drought Risk", "Wildfire Risk"])
     min_value = st.sidebar.slider("Minimum Risk", 0.0, 50.0, 5.0, 1.0)
-    color_by = "Low_Income_Pct"
 
     if hazard == "Wind Risk":
         df = wind_df
@@ -77,7 +75,7 @@ if view == "Hazard Map":
         lat=data["Lat"],
         text=data["County"] + ", " + data["State"] + "<br>Risk: " + data[risk_col].astype(str),
         marker=dict(
-            size=data[color_by] * 0.7,
+            size=data["Low_Income_Pct"] * 0.7,
             color=data[risk_col],
             colorscale=colorscale,
             showscale=True,
@@ -104,50 +102,48 @@ if view == "Hazard Map":
         st.subheader("Top 10 Counties by Risk")
         st.dataframe(data.sort_values(by=risk_col, ascending=False).head(10)[["County", "State", risk_col, "Low_Income_Pct"]])
 
-# --- Community View ---
+# --- View: Community Data (no map) ---
 else:
-    metric = st.sidebar.selectbox("Community Metric", [
+    st.title("Community Data Viewer")
+    metric = st.sidebar.selectbox("Select Community Metric", [
         "Identified as disadvantaged",
         "Energy burden",
         "PM2.5 in the air",
-        "Current asthma among adults aged greater than or equal to 18 years"
+        "Current asthma among adults aged greater than or equal to 18 years",
+        "Share of properties at risk of fire in 30 years",
+        "Total population"
     ])
 
-    community = census_df[census_df[metric].notna()]
+    show_top_n = st.sidebar.slider("Top N Communities", 5, 50, 10)
+
+    community = census_df[census_df[metric].notna()].copy()
     if metric == "Identified as disadvantaged":
         community = community[community[metric] == True]
-        color = "black"
-    else:
-        color = community[metric]
 
-    fig = go.Figure(go.Scattergeo(
-        lon=community["Lon"],
-        lat=community["Lat"],
-        text=community["County"] + ", " + community["State"] + "<br>" + metric + ": " + community[metric].astype(str),
-        marker=dict(
-            size=6 if metric == "Identified as disadvantaged" else 8,
-            color=color,
-            colorscale="Viridis" if metric != "Identified as disadvantaged" else None,
-            showscale=metric != "Identified as disadvantaged",
-            colorbar=dict(title=metric) if metric != "Identified as disadvantaged" else None
-        )
-    ))
+    st.subheader(f"Top {show_top_n} Communities by '{metric}'")
 
-    fig.update_layout(
-        geo=dict(
-            scope="usa",
-            landcolor="lightgray",
-            subunitcolor="white",
-            projection_scale=1,
-            center={"lat": 37.0902, "lon": -95.7129}
-        ),
-        height=600,
-        margin={"r": 0, "t": 30, "l": 0, "b": 0}
-    )
-
-    st.title("Community-Level Census Map")
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("Top Communities")
-    top = community.sort_values(by=metric, ascending=False).head(10) if metric != "Identified as disadvantaged" else community.head(10)
+    top = community.sort_values(by=metric, ascending=False).head(show_top_n) if metric != "Identified as disadvantaged" else community.head(show_top_n)
     st.dataframe(top[["County", "State", metric, "Total population"]] if "Total population" in top.columns else top[["County", "State", metric]])
+
+    # --- Bar chart ---
+    if metric != "Identified as disadvantaged":
+        st.subheader("Bar Chart")
+        fig = px.bar(
+            top,
+            x="County",
+            y=metric,
+            color="State",
+            title=f"{metric} by County",
+            labels={"County": "County"},
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # --- Storytelling section ---
+    st.markdown("### 📖 Story Snapshot")
+    top_states = top["State"].value_counts().head(3).index.tolist()
+    st.markdown(f"""
+Communities with the highest **{metric}** are concentrated in: **{', '.join(top_states)}**.
+
+These areas may be disproportionately affected by social, health, or environmental burdens.  
+Use this data to understand where need is greatest and where support may have the most impact.
+""")
