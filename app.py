@@ -16,7 +16,7 @@ census_df = load_census(census_url)
 health_df = load_health_data(health_url)
 
 # --- UI Setup ---
-st.title("Multi-Hazard + Community Vulnerability Dashboard")
+st.title("📊 Multi-Hazard + Community Vulnerability Dashboard")
 
 # --- Introduction ---
 show_introduction()
